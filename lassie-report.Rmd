@@ -1,0 +1,144 @@
+---
+title: "LASSIE Example from Vignette and Paper"
+author: "Jesse Connell"
+date: "`r Sys.Date()`"
+output: pdf_document
+geometry: margin=2cm
+header-includes:
+  - \usepackage{caption}
+  - \DeclareCaptionFormat{empty}{}
+  - \captionsetup{format=empty,aboveskip=0pt,belowskip=0pt}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+library(lassie, quietly = TRUE)
+alignment_file <- system.file("extdata", "CH505-gp160.fasta", package="lassie")
+eg.swarmtools <- swarmtools(aas_file=alignment_file, tf_loss_cutoff=80)
+eg.swarmset <- swarmset(eg.swarmtools)
+```
+
+# Site Selection: Sites varying from Transmitted Founder
+
+```{r}
+knitr::kable(summary(eg.swarmtools))
+```
+
+In the first step LASSIE identified a subset of sites that varied from the 
+transmitted founder in a large proportion at some time.  A lower or higher
+threshold would select more or fewer sites, as shown below.
+
+## Cumulative loss of Transmitted Founder across Sites
+
+```{r}
+plot(eg.swarmtools)
+```
+
+The plot above shows the number of amino acid sites that show a change from the 
+transmitted founder virus, given that at least a certain fraction of sequences 
+at a given timepoint show a change.  The plot marks those with any change at all
+(the initial dropoff from 100% on the upper left) and those that passed the
+specified loss cutoff.
+
+## Variant Frequencies
+
+These plots below, one per varying site identified, show the change from the 
+transmitted founder over time across all notable variants for each site 
+Mutations occuring only once or that never account for more than 10% at any
+given time point are not shown.
+
+```{r, fig.width=8.5, fig.height=11}
+num_cols <- 5
+N <- nrow(eg.swarmtools$selected_sites)
+num_rows <- ceiling(N/num_cols)
+mat <- matrix((1:N)[1:(num_rows*num_cols)],
+              nrow = num_rows,
+              byrow = TRUE)
+
+layout(mat = mat)
+par(mar = c(2, 2, 2, 2))
+result <- report.variant.frequencies(eg.swarmtools,
+                                     conf_int = TRUE, # needs binom pkg
+                                     is_time_in_weeks = TRUE,
+                                     xaxt="n")
+```
+
+```{r fig.width=8.5, fig.height=11, eval=FALSE, echo=FALSE}
+# Playing around with breaking the plot into chunks for easier report inclusion
+# before I realized report.variant.frequencies will show them all at once
+# anyway.
+setup_mats <- function(num, num_cols=5, max_rows=5) {
+  if (is.null(max_rows)) {
+    max_rows <- ceiling(num/num_cols)
+  }
+  chunks <- split(1:num, ceiling((1:num)/(num_cols*max_rows)))
+  lapply(chunks, function(chunk) {
+    num_rows <- ceiling(length(chunk) / num_cols)
+    nums <- 1+(chunk[1:(num_rows*num_cols)]-1)%%(num_cols*max_rows) 
+    matrix(nums, nrow = num_rows, byrow = TRUE)
+  })
+}
+
+mats <- setup_mats(nrow(eg.swarmtools$selected_sites), max_rows=NULL)
+
+invisible(lapply(mats, function(mat) {
+  layout(mat = mat)
+  par(mar = c(2, 2, 2, 2))
+  report.variant.frequencies(eg.swarmtools,
+                                       conf_int = TRUE, # needs binom pkg
+                                       is_time_in_weeks = TRUE,
+                                       xaxt="n")
+}))
+```
+
+# Swarm Selection: Finding Representative Variants
+
+In the second step LASSIE identified representative sequences from the full set
+that encompass the varying sites.
+
+```{r, results='asis', eval=FALSE}
+summary(eg.swarmset)
+```
+
+\begin{footnotesize}
+\begin{verbatim}
+```{r, results='asis', echo=FALSE}
+# (Keeping the actual run separate to make the output small preformatted text but
+# let the R code stay pretty-printed.)
+summary(eg.swarmset)
+```
+\end{verbatim}
+\end{footnotesize}
+
+
+## Swarmset Logo Plot
+
+```{r results="asis"}
+fp <- plot(eg.swarmset, color_option = c("-c", "classic"))
+cat(paste0("\n\n![](", fp, ")\n\n"))
+```
+
+The visualization above shows a sequence logo for all of the representative 
+sequences identified by LASSIE, at the selected sites, ordered by time for a
+given site to exceed 10% TF loss (ties resolved by cumulative TF loss).
+
+## Timepoint Logo Plots
+
+The logo plots below are similar to that above, but shown for all sequences at 
+each time point, and with whitespace representing the transmitted founder.  The
+earliest plot is the transmitted founder reference itself.
+
+```{r, results="asis", fig.width=8.5}
+fps <- lassie::make.timepoint.logos(eg.swarmset, logo_format = "png_print")
+
+sets_of <- 8
+fps_chunked <- split(fps, ceiling(seq_along(fps)/sets_of))
+invisible(lapply(fps_chunked, function(fps_chunk) {
+  fp_out <- tempfile(tmpdir = "/tmp", fileext = ".png")
+  system2("convert", c("-append", fps_chunk, fp_out))
+  cat(paste0("\n\n![](", fp_out, ")\n\n"))
+}))
+```
